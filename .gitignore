@@ -1,4 +1,5 @@
 # Git ignore file for the Solid project
+~*
 
 # Build artifacts
 bin/
