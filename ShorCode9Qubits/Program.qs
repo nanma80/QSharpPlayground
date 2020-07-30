@@ -8,15 +8,22 @@ namespace ShorCode9Qubits {
     open Microsoft.Quantum.Math;
 
     operation SetupMessage(q : Qubit, thetaX : Double, thetaY : Double, thetaZ : Double) : Unit {
-        R(PauliX, thetaX, q);
-        R(PauliY, thetaY, q);
-        R(PauliZ, thetaZ, q);
+        // setup from a random given angle
+        // R(PauliX, thetaX, q);
+        // R(PauliY, thetaY, q);
+        // R(PauliZ, thetaZ, q);
 
+        // setup to |1>
+        // X(q);
+
+        // setup to (|0>+|1>)/sqrt(2)
         // H(q);
+
+        // if all commented out, set up to |0>
     }
 
-    operation CauseError(qubit : Qubit, qubits : Qubit[]) : Unit {
-        let singleError = true;
+    operation CauseError(qubits : Qubit[], errorFactor: Double) : Unit {
+        let singleError = false;
         let thetaX = RandomReal(10) * PI();
         let thetaY = RandomReal(10) * PI();
         let thetaZ = RandomReal(10) * PI();
@@ -24,40 +31,27 @@ namespace ShorCode9Qubits {
         if (singleError) {
             let errorPosition = RandomInt(9);
             // let errorPosition = 8;
-            if (errorPosition <= 7) {
-                X(qubits[errorPosition]);
-                // Y(qubits[errorPosition]);
-                // Z(qubits[errorPosition]);
-                // R(PauliX, thetaX, qubits[errorPosition]);
-                // R(PauliY, thetaY, qubits[errorPosition]);
-                // R(PauliZ, thetaZ, qubits[errorPosition]);
-
-            } else {
-                X(qubit);
-                // Y(qubit);
-                // Z(qubit);
-                // R(PauliX, thetaX, qubit);
-                // R(PauliY, thetaY, qubit);
-                // R(PauliZ, thetaZ, qubit);
-            }
+            
+            // X(qubits[errorPosition]);
+            // Y(qubits[errorPosition]);
+            // Z(qubits[errorPosition]);
+            R(PauliX, thetaX, qubits[errorPosition]);
+            R(PauliY, thetaY, qubits[errorPosition]);
+            R(PauliZ, thetaZ, qubits[errorPosition]);
         } else {
-            // rotation error
-            let thetaFactor = 1.0/6.0;
+            let epsilonX = RandomReal(10) * PI() * errorFactor / 2.0;
+            let epsilonY = RandomReal(10) * PI() * errorFactor / 2.0;
+            let epsilonZ = RandomReal(10) * PI() * errorFactor / 2.0;
 
-            for (position in 0..7) {
-                R(PauliX, thetaX * thetaFactor, qubits[position]);
-                R(PauliY, thetaY * thetaFactor, qubits[position]);
-                R(PauliZ, thetaZ * thetaFactor, qubits[position]);
+            for (position in 0..8) {
+                R(PauliX, epsilonX, qubits[position]);
+                R(PauliY, epsilonY, qubits[position]);
+                R(PauliZ, epsilonZ, qubits[position]);
             }
-
-            R(PauliX, thetaX * thetaFactor, qubit);
-            R(PauliY, thetaY * thetaFactor, qubit);
-            R(PauliZ, thetaZ * thetaFactor, qubit);
-
         }
     }
 
-    operation SingleTest(thetaX : Double, thetaY : Double, thetaZ : Double, applyCorrection : Bool) : Int[] {
+    operation SingleTest(thetaX : Double, thetaY : Double, thetaZ : Double, noiceLevel : Double, applyCorrection : Bool) : Int[] {
         mutable measureDupInput = 0;
         mutable measureCorrected = 0;
 
@@ -86,7 +80,8 @@ namespace ShorCode9Qubits {
                 CNOT(qInputs[5], qInputs[7]);
 
                 // noisy channel
-                CauseError(qInput, qInputs);
+                mutable allQubits = [qInput] + qInputs;
+                CauseError(allQubits, noiceLevel);
 
                 // correction
                 CNOT(qInput, qInputs[0]);
@@ -125,9 +120,10 @@ namespace ShorCode9Qubits {
         return [measureDupInput, measureCorrected];
     }
 
-    @EntryPoint()
-    operation RepeatedTest() : Unit {
-        let repeatCount = 10000;
+    operation RepeatedTest(repeatCount: Int, noiseLevel : Double) : Double[] {
+        Message($"Noise level: {noiseLevel}");
+        mutable noCorrectionErrorRate = 0.0;
+        mutable withCorrectionErrorRate = 0.0;
 
         let thetaX = RandomReal(10) * PI();
         let thetaY = RandomReal(10) * PI();
@@ -138,34 +134,69 @@ namespace ShorCode9Qubits {
         mutable recordDupInputResults = new Int[2];
 
         for(repeatIndex in 1..repeatCount) {
-            let testOutput = SingleTest(thetaX, thetaY, thetaZ, false);
+            let testOutput = SingleTest(thetaX, thetaY, thetaZ, noiseLevel, false);
 
             let measureDupInput = testOutput[0];
             let measureCorrected = testOutput[1];
 
             set recordDupInputResults w/= measureDupInput <- recordDupInputResults[measureDupInput] + 1;
             set recordCorrectedResults w/= measureCorrected <- recordCorrectedResults[measureCorrected] + 1;
+            set noCorrectionErrorRate = 1.0 - IntAsDouble(recordDupInputResults[0] * recordCorrectedResults[0] + recordDupInputResults[1] * recordCorrectedResults[1])/IntAsDouble(repeatCount * repeatCount);
         }
 
         Message($"duplicated input: {recordDupInputResults}");
         Message($"output no correc: {recordCorrectedResults}");
+        Message($"{noCorrectionErrorRate}");
 
         Message($"With correction, repeated {repeatCount} times");
         set recordCorrectedResults = new Int[2];
         set recordDupInputResults = new Int[2];
 
         for(repeatIndex in 1..repeatCount) {
-            let testOutput = SingleTest(thetaX, thetaY, thetaZ, true);
+            let testOutput = SingleTest(thetaX, thetaY, thetaZ, noiseLevel, true);
 
             let measureDupInput = testOutput[0];
             let measureCorrected = testOutput[1];
 
             set recordDupInputResults w/= measureDupInput <- recordDupInputResults[measureDupInput] + 1;
             set recordCorrectedResults w/= measureCorrected <- recordCorrectedResults[measureCorrected] + 1;
+            set withCorrectionErrorRate = 1.0 - IntAsDouble(recordDupInputResults[0] * recordCorrectedResults[0] + recordDupInputResults[1] * recordCorrectedResults[1])/IntAsDouble(repeatCount * repeatCount);
         }
 
         Message($"duplicated input: {recordDupInputResults}");
         Message($"corrected output: {recordCorrectedResults}");
+        Message($"{withCorrectionErrorRate}");
+
+        return [noCorrectionErrorRate, withCorrectionErrorRate];
+    }
+
+    @EntryPoint()
+    operation TestWithNoiseLevels() : Unit {
+        let repeatCount = 10000;
+        let bucketCount = 40;
+        mutable allNoiseLevels = new Double[bucketCount + 1];
+        mutable allNoCorrectionErrorRate = new Double[bucketCount + 1];
+        mutable allWithCorrectionErrorRate = new Double[bucketCount + 1];
+
+        for(bucketIndex in 0..bucketCount) {
+            let noiseLevel = IntAsDouble(bucketIndex)/IntAsDouble(bucketCount) * 0.25;
+            Message($"{noiseLevel}");
+
+            let testOutput = RepeatedTest(repeatCount, noiseLevel);
+
+            set allNoiseLevels w/= bucketIndex <- noiseLevel;
+            set allNoCorrectionErrorRate w/= bucketIndex <- testOutput[0];
+            set allWithCorrectionErrorRate w/= bucketIndex <- testOutput[1];
+        }
+
+        Message($"{allNoiseLevels}");
+        Message($"{allNoCorrectionErrorRate}");
+        Message($"{allWithCorrectionErrorRate}");
+
+        Message($"NoiseLevels,NoCorrectionErrorRate,WithCorrectionErrorRate");
+        for(bucketIndex in 0..bucketCount) {
+            Message($"{allNoiseLevels[bucketIndex]},{allNoCorrectionErrorRate[bucketIndex]},{allWithCorrectionErrorRate[bucketIndex]}");
+        }
     }
 }
 
